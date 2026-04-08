@@ -1,6 +1,11 @@
+import numpy as np 
 import yfinance as yf 
 import pandas as pd 
 import matplotlib.pyplot as plt 
+from itertools import combinations
+from statsmodels.tsa.stattools import coint 
+import statsmodels.api as sm 
+
 
 # ----------- Define a function to load prices from yfinance --------------- 
 
@@ -22,48 +27,74 @@ def load_prices(tickers, start = '2016-01-01', end = None):
     return prices 
 
 
-# ----------- Define some ETF pairs and load their prices -------------
+# ---------------- Select our ETF universe and find possible pairs -----------------------
 
-tickers = []
+etfs = [
+    "SPY", "IVV", "VOO", "VTI",
+    "QQQ", "VGT", "XLK",
+    "IWM", "IJR",
+    "EFA", "IEFA", "VEA",
+    "EEM", "VWO",
+    "VNQ", "XLRE",
+    "XLF", "XLE", "XLY", "XLP", "XLI", "XLB", "XLU",
+    "TLT", "IEF", "SHY", "TLH",
+    "GLD", "IAU", "SLV"
+]
 
-tickers1 = ['SPY', 'IVV'] 
-#SPY = State Street SPDR S&P 500 ETF Trust, IVV = iShares Core S&P 500 ETF
-tickers += tickers1
-prices1 = load_prices(tickers1)
-
-tickers2 = ['GLD', 'IAU']
-#GLD = SPDR Gold Shares ETF, IAU = iShares Gold Trust ETF
-tickers += tickers2
-prices2 = load_prices(tickers2)
-
-tickers3 = ['TLT', 'TLH']
-#TLT = iShares 20+ Year Treasury Bond ETF, IEF = iShares 10-20 Year Treasury Bond ETF
-tickers += tickers3
-prices3 = load_prices(tickers3) 
-
-tickers4 = ['XLF', 'KBE']
-#XLF = State Street Financial Select Sector SPDR ETF, KBE = State Street SPDR S&P Bank ETF 
-tickers += tickers4
-prices4 = load_prices(tickers4) 
+def generate_pairs(tickers):
+    return list(combinations(tickers, 2))
 
 
+def test_coint(series1, series2):
+    score, pvalue, _ = coint(series1, series2)
+    return pvalue 
 
-# ---------- Visual inspection to determine plausible candidate pairs and catch data issues -------------
+
+def find_coint_pairs(tickers, pvalue_threshold = 0.05):
+    results = []
+    pairs = generate_pairs(tickers)
+    prices = load_prices(tickers)
+
+    for ticker1, ticker2 in pairs:
+        series1 = prices[ticker1]
+        series2 = prices[ticker2]
+
+        try:
+            pvalue = test_coint(series1, series2)
+            results.append({
+                'ticker1': ticker1,
+                'ticker2': ticker2,
+                'pvalue': pvalue 
+            })
+        
+        except Exception as e:
+            print(f'Error testing {ticker1}-{ticker2}: {e}')
+
+    results_df = pd.DataFrame(results)
+    results_df = results_df.sort_values('pvalue')
+
+    best = results_df[(0 < results_df['pvalue']) & (results_df['pvalue'] < pvalue_threshold)].reset_index(drop = True)
+    best_pairs = best[['ticker1', 'ticker2']].values.tolist()
+
+    return results_df, best, best_pairs
 
 
-# def plot_raw_prices(prices):
-#     prices.plot(figsize = (12,6))
-#     plt.title('Adjusted Close Prices')
-#     plt.xlabel('Date')
-#     plt.ylabel('Price')
-#     plt.legend(loc = 'best')
-#     plt.tight_layout
-#     plt.show()
+# print(find_coint_pairs(etfs)[1])
 
-# plot_raw_prices(prices1)
-# plot_raw_prices(prices2)
-# plot_raw_prices(prices3)
-# plot_raw_prices(prices4) 
+if __name__ == "__main__":
+    best_pairs = find_coint_pairs(etfs)[2]
+
+
+# --------------- Visual inspection ----------------
+
+def plot_raw_prices(prices):
+    prices.plot(figsize = (12,6))
+    plt.title('Adjusted Close Prices')
+    plt.xlabel('Date')
+    plt.ylabel('Price')
+    plt.legend(loc = 'best')
+    plt.tight_layout
+
 
 def plot_normalised_prices(prices):
     normalised = prices/prices.iloc[0]
@@ -72,19 +103,8 @@ def plot_normalised_prices(prices):
     plt.xlabel('Date')
     plt.ylabel('Normalised Price')
     plt.legend(loc = 'best')
-    plt.tight_layout
-    plt.show()
-
-plot_normalised_prices(prices1)
-plot_normalised_prices(prices2)
-plot_normalised_prices(prices3)
-plot_normalised_prices(prices4) 
-
-"""Normalised prices1 for SPY and IVV are essentially identical, so there might not be much to exploit here. 
-Normalised prices2 for GLD and IAU are almost identical, perhaps with a very small spread at some points which could be explored. 
-Normalised prices3 for TLT and TLH follow very similar trends and have long periods of diversion and convergence, suggesting a pair trade might be suitable (but maybe over a longer horizon).
-Normalised prices4 follow the same trend but have diverged in recent years. This could suggest different betas to the same sector, but should look at the ratio to see if there is still an 
-opportunity for a pairs trade."""
+    plt.tight_layout()
+    
 
 def plot_normalised_price_ratios(prices):
     normalised = prices/prices.iloc[0]
@@ -93,13 +113,9 @@ def plot_normalised_price_ratios(prices):
     plt.title(f"{prices.columns[0]}/{prices.columns[1]} Price Ratio")
     plt.xlabel("Date")
     plt.ylabel("Ratio")
+    plt.legend(loc = 'best')
     plt.tight_layout()
-    plt.show()
-
-plot_normalised_price_ratios(prices4)
-
-"""We see that since 2023, the ratio of normalised prices of XLF and KBE fluctuate around a mean of 0.69, so this is certainly worth looking at."""
-
+    
 
 def plot_normalised_price_scatter(prices):
     normalised = prices/prices.iloc[0]
@@ -109,20 +125,21 @@ def plot_normalised_price_scatter(prices):
     plt.ylabel(prices.columns[1])
     plt.title(f"{prices.columns[1]} vs {prices.columns[0]} Price Scatter")
     plt.tight_layout()
+
+
+if __name__ == "__main__":
+    prices = load_prices(['GLD', 'IAU'])
+    plot_raw_prices(prices)
     plt.show()
 
-plot_normalised_price_scatter(prices1)
-plot_normalised_price_scatter(prices2) 
-plot_normalised_price_scatter(prices3) 
-plot_normalised_price_scatter(prices4) 
 
-"""In the first two instances we have an almost perfectly linear relationship. For the third instance there is certainly a linear relationship although it is more diffused. 
-In the final instance, there is a very rough overall linear relationship, but with many clouds (which themselves are rather linear)."""
-
-
+# for pair in best_pairs: 
+#     prices = load_prices(pair)
+#     plot_normalised_prices(prices)
+#     plot_normalised_price_ratios(prices)
+#     plot_normalised_price_scatter(prices)
+#     plt.show()
 
 
-
-
-
-
+#pairs where ratio seems to vary around the mean: ['IWM', 'VWO'], ['IJR', 'XLB'], ['IJR', 'XLP']
+#some other ratios seem to oscillate around a shallow trend, e.g. ['VTI', 'XLU'], ['QQQ', 'XLU']
