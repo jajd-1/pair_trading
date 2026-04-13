@@ -4,21 +4,19 @@ import pandas as pd
 import matplotlib.pyplot as plt 
 from itertools import combinations
 from statsmodels.tsa.stattools import coint 
-import statsmodels.api as sm 
 
 
-# ----------- Define a function to load prices from yfinance --------------- 
+def load_prices(tickers: list[str], start_date: str, end_date: str) -> pd.DataFrame:  #date should be of the form 'yyyy-mm-dd'
+    """Load adjusted prices from yfinance"""
+    data = yf.download(tickers, start = start_date , end = end_date, auto_adjust = False, progress = False) 
 
-def load_prices(tickers, start = '2016-01-01', end = None):
-    data = yf.download(tickers, start = start , end = end, auto_adjust = False, progress = False) 
-
-    if "Adj Close" in data: 
-        prices = data["Adj Close"].copy()
+    if 'Adj Close' in data: 
+        prices = data['Adj Close'].copy()
     else:
-        prices = data["Close"].copy()
+        prices = data['Close'].copy()
 
     if isinstance(prices, pd.Series):
-        prices = prices.to_frame()      #if there is only one ticker, prices will be a series rather than dataframe, so we convert it for compatability later
+        prices = prices.to_frame()      #if there is only one ticker, prices will be a series rather than dataframe, so convert it
 
     prices = prices.sort_index()
     prices = prices[~prices.index.duplicated(keep = 'first')]   #if there are any duplicate rows, keep only the first
@@ -27,33 +25,23 @@ def load_prices(tickers, start = '2016-01-01', end = None):
     return prices 
 
 
-# ---------------- Select our ETF universe and find possible pairs -----------------------
-
-etfs = [
-    "SPY", "IVV", "VOO", "VTI",
-    "QQQ", "VGT", "XLK",
-    "IWM", "IJR",
-    "EFA", "IEFA", "VEA",
-    "EEM", "VWO",
-    "VNQ", "XLRE",
-    "XLF", "XLE", "XLY", "XLP", "XLI", "XLB", "XLU",
-    "TLT", "IEF", "SHY", "TLH",
-    "GLD", "IAU", "SLV"
-]
-
-def generate_pairs(tickers):
+def generate_pairs(tickers: list[str]) -> list[list[str]]:
+    """Returns all possible pairs of tickers from the list of tickers"""
     return list(combinations(tickers, 2))
 
 
-def test_coint(series1, series2):
+def test_coint(series1: pd.Series, series2: pd.Series) -> float:
+    """Uses the Engle-Granger method to test for cointegration between series1 and series2, with a low p-value suggesting cointegration"""
     score, pvalue, _ = coint(series1, series2)
     return pvalue 
 
 
-def find_coint_pairs(tickers, pvalue_threshold = 0.05):
+def find_coint_pairs(tickers: list[str], start_date: str, end_date: str, pvalue_threshold: float) -> tuple[pd.DataFrame, pd.DataFrame, list[list]]:
+    """Tests all pairs for cointegration and returns 3 things: a dataframe consisting of p-values for all pairs, a dataframe consisting of p-values below the threshold, and
+     a list of pairs for which the corresponding p-value is below the threshold."""
     results = []
     pairs = generate_pairs(tickers)
-    prices = load_prices(tickers)
+    prices = load_prices(tickers, start_date, end_date)
 
     for ticker1, ticker2 in pairs:
         series1 = prices[ticker1]
@@ -79,16 +67,11 @@ def find_coint_pairs(tickers, pvalue_threshold = 0.05):
     return results_df, best, best_pairs
 
 
-# print(find_coint_pairs(etfs)[1])
-
-if __name__ == "__main__":
-    best_pairs = find_coint_pairs(etfs)[2]
-
-
 # --------------- Visual inspection ----------------
 
-def plot_raw_prices(prices):
-    prices.plot(figsize = (12,6))
+def plot_raw_prices(prices: pd.DataFrame):
+    fig, ax = plt.subplots(figsize = (12, 6))
+    prices.plot(ax = ax)
     plt.title('Adjusted Close Prices')
     plt.xlabel('Date')
     plt.ylabel('Price')
@@ -96,50 +79,43 @@ def plot_raw_prices(prices):
     plt.tight_layout
 
 
-def plot_normalised_prices(prices):
+def plot_normalised_prices(prices: pd.DataFrame):
     normalised = prices/prices.iloc[0]
-    normalised.plot(figsize = (12,6))
-    plt.title('Normalised Adjusted Close Prices (start = 1)')
+    fig, ax = plt.subplots(figsize = (12,6))
+    normalised.plot(ax = ax)
+    plt.title(f'Normalised Adjusted Close Prices (start = 1) for {prices.columns[0]} and {prices.columns[1]}')
     plt.xlabel('Date')
     plt.ylabel('Normalised Price')
     plt.legend(loc = 'best')
     plt.tight_layout()
     
 
-def plot_normalised_price_ratios(prices):
+def plot_normalised_price_ratios(prices: pd.DataFrame):
     normalised = prices/prices.iloc[0]
     ratio = normalised.iloc[:, 0]/normalised.iloc[:, 1]
-    ratio.plot(figsize=(12, 6))
-    plt.title(f"{prices.columns[0]}/{prices.columns[1]} Price Ratio")
-    plt.xlabel("Date")
-    plt.ylabel("Ratio")
+    fig, ax = plt.subplots(figsize = (12, 6))
+    ratio.plot(ax = ax)
+    plt.title(f'{prices.columns[0]}/{prices.columns[1]} Normalised Price Ratio')
+    plt.xlabel('Date')
+    plt.ylabel('Ratio')
     plt.legend(loc = 'best')
     plt.tight_layout()
     
 
-def plot_normalised_price_scatter(prices):
+def plot_normalised_price_scatter(prices: pd.DataFrame):
     normalised = prices/prices.iloc[0]
     plt.figure(figsize = (6,6))
-    plt.scatter(normalised.iloc[:, 0], normalised.iloc[:, 1], alpha = 0.5, marker = ".")
+    plt.scatter(normalised.iloc[:, 0], normalised.iloc[:, 1], alpha = 0.5, marker = '.')
     plt.xlabel(prices.columns[0])
     plt.ylabel(prices.columns[1])
-    plt.title(f"{prices.columns[1]} vs {prices.columns[0]} Price Scatter")
+    plt.title(f'{prices.columns[1]} vs {prices.columns[0]} Normalised Price Scatter')
     plt.tight_layout()
 
 
-if __name__ == "__main__":
-    prices = load_prices(['GLD', 'IAU'])
-    plot_raw_prices(prices)
-    plt.show()
-
-
-# for pair in best_pairs: 
-#     prices = load_prices(pair)
-#     plot_normalised_prices(prices)
-#     plot_normalised_price_ratios(prices)
-#     plot_normalised_price_scatter(prices)
-#     plt.show()
-
-
-#pairs where ratio seems to vary around the mean: ['IWM', 'VWO'], ['IJR', 'XLB'], ['IJR', 'XLP']
-#some other ratios seem to oscillate around a shallow trend, e.g. ['VTI', 'XLU'], ['QQQ', 'XLU']
+def run_plots1(pairs: list[list[str]], start_date: str, end_date: str):
+    for pair in pairs: 
+        prices = load_prices(pair, start_date, end_date)
+        plot_normalised_prices(prices)
+        plot_normalised_price_ratios(prices)
+        plot_normalised_price_scatter(prices)
+        plt.show()
