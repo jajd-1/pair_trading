@@ -1,6 +1,6 @@
 # Pairs trading
 
-This project is a research pipeline for testing a cointegration-based pairs trading strategy on market price data. More details can be found in the file descriptions below.  
+This project is a research pipeline for testing a cointegration-based pairs trading strategy on market price data. More details on the pipeline can be found in the file descriptions below, and we also include a section explaining the required background knowledge to understand the strategy. 
 
 
 ## File summaries
@@ -31,7 +31,7 @@ We make some simplifying assumptions in creating and evaluating our strategy, in
 
 ## Background and methodology 
 
-Rather than trying to predict the price movement of a particular asset, a pairs trading strategy attempts to predict the relative movement of two cointegrated assets. Roughly speaking, two assets are said to be _cointegrated_ if some linear combination of prices exhibits a long-term, stable equilibrium relationship. One may then build a trading strategy based on deviations around this equilibrium. 
+Rather than trying to predict the price movement of a particular asset, a pairs trading strategy attempts to predict the relative movement of two cointegrated assets. Roughly speaking, two assets are said to be _cointegrated_ if some linear combination of their prices exhibits a long-term, stable equilibrium relationship. One may then build a trading strategy based on deviations around this equilibrium. 
 
 More precisely, consider two time series $x_t$ and $y_t$ representing daily price data for two assets $X$ and $Y$. The standard Engle-Granger test assumes that both $x_t$ and $y_t$ are integrated to order one, denoted $I(1)$, meaning that they are non-stationary but their first differences ($\Delta x_t = x_t - x_{t-1}$ and $\Delta y_t = y_t - y_{t-1}$) are stationary. One way to check this is to test for a unit root using e.g. the ADF test, although we won't explain this here. The Engle-Granger method then regresses one asset on the other using ordinary least squares, yielding
 
@@ -43,11 +43,11 @@ Suppose we have now decided that two assets $X$ and $Y$ are likely cointegrated.
 
 $$\epsilon_t = y_t - \alpha - \beta x_t.$$
 
-In our pairs trading context, we refer to $\beta$ as the _hedge ratio_. We can then compute the z-score $Z_N$ of the spread using the rolling mean $\mu_N$ and rolling standard deviation $\sigma_N$ from the previous $N$-day window:
+In our pairs trading context, we refer to $\beta$ as the _hedge ratio_. In fact, our code incorporates a dynamic hedge ratio using rolling regression, whereby the coefficients $\alpha$ and $\beta$ are continually updated using some fixed window size of past data. The hope is that this additional flexibility reflect changing correlations and volatilities in the long term. We can then compute the adaptive z-score $Z_N$ of the spread using the rolling mean $\mu_N$ and rolling standard deviation $\sigma_N$ from the previous $N$-day window:
 
 $$Z_N = \frac{\epsilon_t - \mu_N}{\sigma_N}.$$
 
-This provides a normalised measure of how much the spread has deviated from its equilibrium. In what follows we assume $N$ is fixed and denote $Z_N$ by $Z$. 
+(The word 'adaptive' here refers to the fact that the last $N$ residuals are computed using their respective $\beta$s, rather than using the current day's $\beta$.) This provides a normalised measure of how much the spread has deviated from its equilibrium. In what follows we assume $N$ is fixed and denote $Z_N$ by $Z$. 
 
 We are now in a position build our strategy: if the z-score becomes high (e.g. above 2), then this indicates that $Y$ is overpriced relative to $X$, in which case we go short on the spread (meaning we go short on 1 share of $Y$ and long on $\beta$ shares of $X$). If the z-score becomes low (e.g. below -2), then this indicates that $Y$ is underpriced relative to $X$, in which case we go long on the spread (meaning we go long on 1 share of $Y$ and short on $\beta$ shares of $X$). If the z-score returns close to zero (e.g. above -0.5 while we are long on the spread, or below 0.5 while we are short on the spread), then we close our position (sell our long positions and buy back our short ones). 
 
@@ -55,14 +55,28 @@ We label our position as +1 if we're currently long on the spread, -1 if we're c
 
 - If on day $t$ our position is 0 and at close it holds that $Z < -z_{\text{entry}}$, then we enter a long spread position using the close price and enter our position as +1 from day $t+1$.
 - If on day $t$ our position is 0 and at close it holds that $Z > z_{\text{entry}}$, then we enter a short spread position using the close price and enter our position as -1 from day $t+1$.
-- If on day $t$ our position is +1 and at close it holds that $Z > -z_{\text{exit}}$, then we exit our position using the close price and enter our position as 0 from day $t+1$.
-- If on day $t$ our position is -1 and at close it holds that $Z < z_{\text{exit}}$, then we exit our position using the cloe price and enter our position as 0 from day $t+1$.
+- If on day $t$ our position is +1 and at close it holds that $Z > -z_{\text{exit}}$, then we exit our position using the close price. If at close it further holds that $Z > z_{\text{entry}}$, then we enter a short spread position using the close price and enter our position as -1 from day $t+1$; otherwise, we enter our position as 0 from day $t+1$.
+- If on day $t$ our position is -1 and at close it holds that $Z < z_{\text{exit}}$, then we exit our position using the close price. If at close it further holds that $Z < -z_{\text{entry}}$, then we enter a long spread position using the close price and enter our position as +1 from day $t+1$; otherwise, we enter our position as 0 from day $t+1$.
 
-The next step is to backtest the strategy. The return on day $t$ from a long (+) or short (-) position is 
+We note that position reversals (jumping from +1 to -1 or vice versa) should be relatively uncommon for genuinely cointegrated assets and reasonable entry/exit thresholds, but these possibilities must be considered nonetheless and introduce some additional complexity to the code.  
 
-$$\pm\ \frac{\Delta y_t - \beta\Delta x_t}{|y_{t-1}| + |\beta x_{t-1}|},$$
+The next step is to backtest the strategy. The gross return on day $t$ from a long (+) or short (-) position is 
 
-from which we subtract a transaction cost on the days our position label changes, yielding the net return. The transaction cost is specified as a certain number of basis points per unit turnover (i.e. per dollar of trades executed). The net returns for a given period is then the product of the net daily returns over that period. In the backtesting stage we also compute the maximum drawdown (soon to add other quantities). 
+$$\pm\ \frac{\Delta y_t - \beta_{t-1}\Delta x_t}{|y_{t-1}| + |\beta x_{t-1}|},$$
+
+where $\beta_{t-1}$ is the hedge ratio computed at close on the previous day. The transcation cost of entering or exiting a trade on day $t$ is specified as a certain number of basis points $C_{bp}$ per unit turnover (i.e. per dollar of trades executed),
+
+$$ \frac{C_{bp}}{10,000},$$
+
+ which is subtracted from the gross return on day $t$. The rebalancing costs, which are typically incurred every day a position is held (with the exception of the day the position is exited), are also subtracted and given by 
+
+ $$ \frac{C_{bp}}{10,000} \cdot \frac{|\Delta \beta_t| x_t}{|y_{t-1}| + |\beta x_{t-1}|}.$$
+
+After subtracting these transaction costs we arrive at the net return $r_t$ for day $t$, and the net returns for a given period is then 
+
+$$ \prod_t (1+r_t) - 1.$$
+
+Finally we evaluate the performance of the strategy. (Already in code, to be added here later)
 
 ## An example 
 
