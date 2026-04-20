@@ -1,32 +1,33 @@
 # Pairs trading
 
-DOESN'T REFLECT UPDATED CODE YET!
-
-We build a cointegration-based pairs trading research pipeline. 
+This project is a research pipeline for testing a cointegration-based pairs trading strategy on market price data. More details can be found in the file descriptions below.  
 
 
 ## File summaries
 
-`data.py` Loads, cleans and aligns daily price data for a given list of tickers using the yfinance module (an open source tool that uses Yahoo Finance's publicly available APIs). Given a user-specified selection of assets, we run the Engle–Granger cointegration test on all possible pairs and retain those pairs for which the null hypothesis of no cointegration can be rejected with a p-value of 0.05. We also produce plots relating to these pairs to further identify economically plausible candidate pairs.
+`data.py` Loads and cleans adjusted price data for a user-specified selection of assets (provided as a list of ticker symbols) using the yfinance module (an open source tool that uses Yahoo Finance's publicly available APIs). Given the list of assets, we run the Engle–Granger cointegration test on all possible pairs and retain those pairs for which the null hypothesis of no cointegration can be rejected with a user-specified p-value. We also produce plots relating to these pairs to further help identify economically plausible pairs.
 
-`signal_construction.py` For a given pair we estimate the hedge ratio by regressing one price series on the other. From this we compute the residual spread and standardise using a rolling z-score. This rolling z-score is used to generate trading signals: when there are large deviations above the equilibrium we go short on the spread, when there are large deviations below the equilibrium we go long on the spread, and when the prices returns to near the equilibrium we close our position.
+`signal_construction.py` For a given pair of assets we estimate their hedge ratio over a given date range by regressing one price series on the other. We use this to construct a dynamic hedge ratio and corresponding residual spread which is updated daily and based on price data from some fixed window of time (typically a few years). This spread is then standardised to produce an adapative rolling z-score, which is used to generate trading signals as follows: when there are large deviations above the equilibrium we go short on the spread, when there are large deviations below the equilibrium we go long on the spread, and when the prices returns to near the equilibrium we close our position.
 
-`backtesting.py` We backtest the trading strategy whilst taking into account trading costs. 
+`backtesting.py` We backtest the above trading strategy using out-of-sample historical data, incorporating both entry/exit costs from entering/exiting positions *and* rebalancing costs arising from the evolving hedge ratio when computing net returns.
+
+`evaluation.py` A more detailed analysis on the performance of our strategy is carried out. We compute various metrics on performance such as total returns, annualised returns, annualised volatility, annualised Sharpe ratio and maximum drawdown, we provide data pertaining to individual trades (e.g. returns and holding period), and we also provide further statistics such as trade count, hit rates, payoff ratios etc. 
+
+`main.py` Compiles the above into a clean pipeline, with the option to bypass pair selection from data.py if the user already has a pair of assets in mind. Various parameters should be set here, including various dates, windows for computing OLS coefficients and z-scores, entry/exit thresholds, trading costs and the risk-free rate used in computing the Sharpe ratio. 
 
 
 ## Assumptions
 
-Beyond using a relatively simple model (e.g. we only use a static hedge ratio), we also make some further simplifying assumptions in computing returns, such as:
+We make some simplifying assumptions in creating and evaluating our strategy, including:
 
 - Trades only occur at close
 - There are no capital constraints
-- Perfect shorting (i.e. no constraints or fees on borrowing, no recalls)
+- Perfect shorting (i.e. no constraints or fees on borrowing, and no recalls)
 - No financing costs or margin requirements
 - No bid-ask spread or slippage (i.e. no market impact from making the proposed trades)
 - Perfect liquidity
 - No stop-loss or risk controls (i.e. we can hold our positions until exit thresholds are reached)
 
-We will return to incorporate some of these at a later date. 
 
 ## Background and methodology 
 
