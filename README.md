@@ -60,19 +60,29 @@ We label our position as +1 if we're currently long on the spread, -1 if we're c
 
 (Position reversals (jumping from +1 to -1 or vice versa) should be relatively uncommon for genuinely cointegrated assets and reasonable entry/exit thresholds, but these possibilities must be considered nonetheless and introduce some additional complexity to the code.)
 
-The next step is to backtest the strategy. The gross return on day $t$ from a long (+) or short (-) position is 
+The next step is to backtest the strategy. If the strategy holds a long spread position from the close of day $t-1$ to the close of day $t$, then its gross return on day $t$ is
 
-$$\pm\ \frac{\Delta y_t - \beta_{t-1}\Delta x_t}{|y_{t-1}| + |\beta_{t-1} x_{t-1}|},$$
+$$\frac{\Delta y_t - \beta_{t-1}\Delta x_t}{|y_{t-1}| + |\beta_{t-1} x_{t-1}|},$$
 
-where $\beta_{t-1}$ is the hedge ratio computed at close on the previous day. The transcation cost of entering or exiting a position on day $t$ is specified as a certain number of basis points $C_{bp}$ per unit turnover (i.e. per dollar of trades executed),
+where $\Delta y_t = y_t - y_{t-1}$, $\Delta x_t = x_t - x_{t-1}$ and $\beta_{t-1}$ is the hedge ratio computed at close on day $t-1$. For a short spread position, the sign of the gross return is reversed. Note that the denominator here is the gross exposure held at close on day $t-1$, and so the gross returns are interpreted as PnL on day $t$ as a fraction of yesterday's gross capital at risk. (If margin costs are incurred e.g. as some fraction of gross exposure, one may choose to include this in the denominator. We assume in this project that there are no margin costs.)
 
-$$ \frac{C_{bp}}{10,000},$$
+The transcation cost of entering or exiting a position on day $t$ is specified as a certain number of basis points $C_{bp}$ per unit turnover, i.e.
 
- which is subtracted from the gross return on day $t$. The rebalancing costs, which are typically incurred every day a position is held (with the exception of the day the position is exited) are also subtracted from gross returns and are given by 
+$$c = \frac{C_{bp}}{10,000}$$
 
- $$ \frac{C_{bp}}{10,000} \cdot \frac{|\Delta \beta_t| x_t}{|y_{t-1}| + |\beta_{t-1} x_{t-1}|}.$$
+per unit currency traded. A reasonable assumption is $1 \leq C_{bp} \leq 5$. If we enter a position at close on day t, our cost for one spread unit is therefore $c(|y_t| + |\beta_t x_t|)$, and hence we should subtract the following quantity from gross returns for that day:
 
-After subtracting these transaction costs we arrive at the net return $r_t$ for day $t$, and the net return for a given period is then 
+$$ \tag{1} {c\frac{(|y_t| + |\beta_t x_t|)}{|y_{t-1}| + |\beta_{t-1} x_{t-1}|}.} $$
+
+Similarly, if we exit a position at close on day $t$, our cost for one spread unit is $c(|y_t| + |\beta_{t-1} x_t|)$, and hence we should subtract the following quantity from gross returns for that day:
+
+$$ \tag{2} {c\frac{(|y_t| + |\beta_t x_t|)}{|y_{t-1}| + |\beta_{t-1} x_{t-1}|}.} $$
+
+Typically, the ratios in equations (1) and (2) are close to one, and the current version of our code uses this approximation. The rebalancing costs, which are typically incurred every day a position is held (with the exception of the day the position is exited) are also subtracted from gross returns and are given by 
+
+ $$ c \cdot \frac{|\Delta \beta_t| x_t}{|y_{t-1}| + |\beta_{t-1} x_{t-1}|}, $$
+
+where $\Delta \beta_t = \beta_t - \beta_{t-1}$. After subtracting these transaction costs we arrive at the net return $r_t$ for day $t$, and the net return for a given period is then 
 
 $$ \prod_t (1+r_t) - 1.$$
 
